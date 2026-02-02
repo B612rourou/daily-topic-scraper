@@ -15,7 +15,7 @@ now = datetime.now(TZ)
 DATE_STR = now.strftime("%Y-%m-%d")
 TIME_STR = now.strftime("%Y-%m-%d %H:%M:%S")
 
-OUT_DIR = "daily_drafts"
+OUT_DIR = "每日选题"
 OUT_PATH = os.path.join(OUT_DIR, f"{DATE_STR}-daily-topics.md")
 
 QUERIES = [

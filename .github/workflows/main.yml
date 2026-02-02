@@ -39,6 +39,6 @@ jobs:
             echo "No changes to commit."
             exit 0
           fi
-          git add daily_drafts/*.md
+          git add 每日选题/*.md
           git commit -m "chore: 添加每日选题 $(date +'%Y-%m-%d')"
           git push
