@@ -3,12 +3,25 @@ set -euo pipefail
 
 REPO_NAME="${1:-$(basename "$(pwd)")}" 
 
-for cmd in git python3 gh; do
-  if ! command -v "$cmd" >/dev/null 2>&1; then
-    echo "缺少命令：$cmd（请先安装）"
-    exit 1
-  fi
-done
+if ! command -v git >/dev/null 2>&1; then
+  echo "缺少命令：git（请先安装）"
+  exit 1
+fi
+
+PY_CMD=""
+if command -v python3 >/dev/null 2>&1; then
+  PY_CMD="python3"
+elif command -v python >/dev/null 2>&1; then
+  PY_CMD="python"
+else
+  echo "缺少命令：python3 或 python（请先安装）"
+  exit 1
+fi
+
+if ! command -v gh >/dev/null 2>&1; then
+  echo "缺少命令：gh（请先安装 GitHub CLI）"
+  exit 1
+fi
 
 if ! gh auth status >/dev/null 2>&1; then
   echo "请先执行：gh auth login"
