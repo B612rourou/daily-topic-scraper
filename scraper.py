@@ -15,7 +15,7 @@ NOW = datetime.now(TZ)
 DATE_STR = NOW.strftime("%Y-%m-%d")
 TIME_STR = NOW.strftime("%Y-%m-%d %H:%M:%S")
 STRICT_DAYS = int(os.environ.get("STRICT_DAYS", 3))
-MAX_DAYS = int(os.environ.get("MAX_DAYS", 7))
+MAX_DAYS = int(os.environ.get("MAX_DAYS", 30))
 CUTOFF = NOW - timedelta(days=STRICT_DAYS)
 MAX_CUTOFF = NOW - timedelta(days=MAX_DAYS)
 
@@ -61,8 +61,9 @@ SEARCH_KEYWORDS = [
 
 MAX_ITEMS = 10
 MIN_HOT_VALUE = 1_000_000
-MIN_PLAY_COUNT = int(os.environ.get("MIN_PLAY_COUNT", 50000))
-MIN_ENGAGEMENT_SCORE = int(os.environ.get("MIN_ENGAGEMENT_SCORE", 3000))
+MIN_PLAY_COUNT = int(os.environ.get("MIN_PLAY_COUNT", 0))
+MIN_ENGAGEMENT_SCORE = int(os.environ.get("MIN_ENGAGEMENT_SCORE", 200))
+RELAX_ENGAGEMENT_SCORE = int(os.environ.get("RELAX_ENGAGEMENT_SCORE", 50))
 ALLOW_HOT_FALLBACK = False
 HEADLESS = os.environ.get("HEADLESS", "1") != "0"
 DEBUG = os.environ.get("DEBUG", "0") == "1"
@@ -305,7 +306,7 @@ def parse_search_jsons(raw: bytes):
     return []
 
 
-def extract_aweme_items(data, keyword: str):
+def extract_aweme_items(data, keyword: str, strict: bool = True):
     items = []
     if not data:
         return items
@@ -333,10 +334,16 @@ def extract_aweme_items(data, keyword: str):
         share = safe_int(stats.get("share_count"))
         collect = safe_int(stats.get("collect_count"))
         engagement = digg + comment * 5 + share * 8 + collect * 3
-        if play > 0 and play < MIN_PLAY_COUNT:
-            continue
-        if play == 0 and engagement < MIN_ENGAGEMENT_SCORE:
-            continue
+        if strict:
+            if not is_recent(dt, CUTOFF):
+                continue
+            if play > 0 and play < MIN_PLAY_COUNT:
+                continue
+            if play == 0 and engagement < MIN_ENGAGEMENT_SCORE:
+                continue
+        else:
+            if play == 0 and engagement < RELAX_ENGAGEMENT_SCORE:
+                continue
         hot_value = play if play > 0 else engagement
         score = (play if play > 0 else 0) + engagement * 10
         tag = "垂直" if vertical else "相关"
@@ -373,6 +380,7 @@ def fetch_douyin_by_playwright():
     cookie_str = load_cookie()
     cookies = parse_cookie_to_list(cookie_str)
     all_items = []
+    relaxed_items = []
     raw_total = [0]
     try:
         with sync_playwright() as p:
@@ -464,7 +472,8 @@ def fetch_douyin_by_playwright():
                         for entry in data.get("data") or []:
                             if entry.get("type") == 1 and entry.get("aweme_info"):
                                 raw_total[0] += 1
-                        items.extend(extract_aweme_items(data, kw))
+                        items.extend(extract_aweme_items(data, kw, strict=True))
+                        relaxed_items.extend(extract_aweme_items(data, kw, strict=False))
 
                 page = context.new_page()
                 if STEALTH_AVAILABLE:
@@ -490,6 +499,9 @@ def fetch_douyin_by_playwright():
         LAST_PLAYWRIGHT_ERROR = f"Playwright error: {e}"
         return []
     print(f"Playwright raw {raw_total[0]} items, filtered {len(all_items)}")
+    if not all_items and relaxed_items:
+        print("No strict results, falling back to relaxed filter.")
+        return relaxed_items
     return all_items
 
 
