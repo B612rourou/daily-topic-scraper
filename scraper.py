@@ -373,6 +373,7 @@ def fetch_douyin_by_playwright():
     cookie_str = load_cookie()
     cookies = parse_cookie_to_list(cookie_str)
     all_items = []
+    raw_total = [0]
     try:
         with sync_playwright() as p:
             context = None
@@ -460,6 +461,9 @@ def fetch_douyin_by_playwright():
                     if not data_list:
                         return
                     for data in data_list:
+                        for entry in data.get("data") or []:
+                            if entry.get("type") == 1 and entry.get("aweme_info"):
+                                raw_total[0] += 1
                         items.extend(extract_aweme_items(data, kw))
 
                 page = context.new_page()
@@ -485,6 +489,7 @@ def fetch_douyin_by_playwright():
     except Exception as e:
         LAST_PLAYWRIGHT_ERROR = f"Playwright error: {e}"
         return []
+    print(f"Playwright raw {raw_total[0]} items, filtered {len(all_items)}")
     return all_items
 
 
