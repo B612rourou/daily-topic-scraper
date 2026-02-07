@@ -2,3 +2,7 @@
 作品列表_parsed.csv
 __pycache__/
 *.pyc
+抖音Cookie.txt
+douyin_cookie.txt
+cookie_extract.log
+.playwright_profile/

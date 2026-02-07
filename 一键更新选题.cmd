@@ -1,13 +1,14 @@
 @echo off
 setlocal
-set "REPO=E:\AI??\???????"
+set "REPO=%~dp0"
+set "REPO=%REPO:~0,-1%"
 set "GIT_EXE="
 if exist "C:\Program Files\Git\cmd\git.exe" set "GIT_EXE=C:\Program Files\Git\cmd\git.exe"
 if exist "C:\Program Files\Git\bin\git.exe" set "GIT_EXE=C:\Program Files\Git\bin\git.exe"
 if "%GIT_EXE%"=="" set "GIT_EXE=git"
 
 pushd "%REPO%" || (
-  echo ????????%REPO%
+  echo Failed to open repo: %REPO%
   pause
   exit /b 1
 )
@@ -19,12 +20,12 @@ if errorlevel 1 (
 
 "%GIT_EXE%" pull
 if errorlevel 1 (
-  echo ????
+  echo Pull failed.
   pause
   popd
   exit /b 1
 )
 
-echo ????
+echo Pull OK.
 popd
 pause
