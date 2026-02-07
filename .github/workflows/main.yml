@@ -33,8 +33,9 @@ jobs:
         env:
           TZ: Asia/Shanghai
           DOUYIN_COOKIE: ${{ secrets.DOUYIN_COOKIE }}
+          HEADLESS: "0"
         run: |
-          python scraper.py
+          xvfb-run -a python scraper.py
 
       - name: Commit and push
         run: |

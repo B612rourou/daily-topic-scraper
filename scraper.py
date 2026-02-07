@@ -474,7 +474,7 @@ def fetch_douyin_by_playwright():
                     wait_until="domcontentloaded",
                     timeout=60000,
                 )
-                page.wait_for_timeout(6000)
+                page.wait_for_timeout(10000)
                 page.close()
                 if items:
                     print(f"关键词「{kw}」命中 {len(items)} 条")
