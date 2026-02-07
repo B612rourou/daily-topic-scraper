@@ -83,6 +83,8 @@ try:
 except Exception:
     STEALTH_AVAILABLE = False
 
+LAST_PLAYWRIGHT_ERROR = ""
+
 
 def norm_url(url: str) -> str:
     url = (url or "").strip()
@@ -363,150 +365,126 @@ def extract_aweme_items(data, keyword: str):
 
 
 def fetch_douyin_by_playwright():
+    global LAST_PLAYWRIGHT_ERROR
+    LAST_PLAYWRIGHT_ERROR = ""
     if not PLAYWRIGHT_AVAILABLE:
+        LAST_PLAYWRIGHT_ERROR = "Playwright not installed."
         return []
     cookie_str = load_cookie()
     cookies = parse_cookie_to_list(cookie_str)
     all_items = []
-    with sync_playwright() as p:
-        context = None
-        browser = None
-        profile = None if cookie_str else find_browser_profile()
-        if profile:
-            base_dir, profile_name, channel = profile
-            if DEBUG:
-                print(f"使用浏览器配置: {base_dir} / {profile_name} ({channel})")
-            try:
-                context = p.chromium.launch_persistent_context(
-                    user_data_dir=base_dir,
-                    channel=channel,
-                    headless=HEADLESS,
-                    args=[
-                        "--disable-blink-features=AutomationControlled",
-                        f"--profile-directory={profile_name}",
-                    ],
+    try:
+        with sync_playwright() as p:
+            context = None
+            browser = None
+            profile = None if cookie_str else find_browser_profile()
+            if profile:
+                base_dir, profile_name, channel = profile
+                if DEBUG:
+                    print(f"使用浏览器配置: {base_dir} / {profile_name} ({channel})")
+                try:
+                    context = p.chromium.launch_persistent_context(
+                        user_data_dir=base_dir,
+                        channel=channel,
+                        headless=HEADLESS,
+                        args=[
+                            "--disable-blink-features=AutomationControlled",
+                            f"--profile-directory={profile_name}",
+                        ],
+                        user_agent=USER_AGENT,
+                        viewport={"width": 1280, "height": 720},
+                        locale="zh-CN",
+                    )
+                except Exception:
+                    context = None
+            if context is None:
+                launch_errors = []
+                for channel in ("chrome", "msedge"):
+                    try:
+                        browser = p.chromium.launch(
+                            headless=HEADLESS,
+                            channel=channel,
+                            args=["--disable-blink-features=AutomationControlled"],
+                        )
+                        break
+                    except Exception as e:
+                        launch_errors.append(str(e))
+                if browser is None:
+                    try:
+                        browser = p.chromium.launch(
+                            headless=HEADLESS,
+                            args=["--disable-blink-features=AutomationControlled"],
+                        )
+                    except Exception as e:
+                        LAST_PLAYWRIGHT_ERROR = f"Playwright launch failed: {e}"
+                        return []
+                context = browser.new_context(
                     user_agent=USER_AGENT,
                     viewport={"width": 1280, "height": 720},
                     locale="zh-CN",
                 )
-            except Exception:
-                context = None
-        if context is None:
-            launch_errors = []
-            for channel in ("chrome", "msedge"):
-                try:
-                    browser = p.chromium.launch(
-                        headless=HEADLESS,
-                        channel=channel,
-                        args=["--disable-blink-features=AutomationControlled"],
-                    )
-                    break
-                except Exception as e:
-                    launch_errors.append(str(e))
-            if browser is None:
-                try:
-                    browser = p.chromium.launch(
-                        headless=HEADLESS,
-                        args=["--disable-blink-features=AutomationControlled"],
-                    )
-                except Exception:
-                    return []
-            context = browser.new_context(
-                user_agent=USER_AGENT,
-                viewport={"width": 1280, "height": 720},
-                locale="zh-CN",
+            context.add_init_script(
+                "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
             )
-        context.add_init_script(
-            "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
-        )
-        if cookies:
-            try:
-                context.add_cookies(cookies)
-            except Exception:
-                pass
-        # 先访问首页，让站点种必要的 Cookie
-        home = context.new_page()
-        if STEALTH_AVAILABLE:
-            try:
-                stealth_sync(home)
-            except Exception:
-                pass
-        try:
-            home.goto("https://www.douyin.com", wait_until="domcontentloaded", timeout=60000)
-            home.wait_for_timeout(3000)
-        except Exception:
-            pass
-        home.close()
-
-        for kw in SEARCH_KEYWORDS:
-            items = []
-
-            def handle_response(resp):
-                url = resp.url
-                if "aweme/v1/web/general/search" not in url:
-                    if DEBUG and "search" in url:
-                        try:
-                            print("other_search", url[:120])
-                        except Exception:
-                            pass
-                    return
-                if DEBUG:
-                    try:
-                        print("response", resp.status, url[:120])
-                    except Exception:
-                        pass
+            if cookies:
                 try:
-                    raw = resp.body()
-                except Exception:
-                    return
-                data_list = parse_search_jsons(raw)
-                if not data_list:
-                    if DEBUG:
-                        bodies = iter_chunk_bodies(raw)
-                        try:
-                            first_len = len(bodies[0]) if bodies else 0
-                        except Exception:
-                            first_len = 0
-                        preview = raw[:120]
-                        tail = raw[-120:]
-                        try:
-                            preview = preview.decode("utf-8", errors="ignore")
-                            tail = tail.decode("utf-8", errors="ignore")
-                        except Exception:
-                            preview = str(preview)
-                            tail = str(tail)
-                        head_bytes = repr(raw[:10])
-                        print("parse_failed", len(raw), "bodies", len(bodies), "first_len", first_len, "head", head_bytes)
-                        print("raw_preview", preview.replace("\n", " "), "...", tail.replace("\n", " "))
-                    return
-                for data in data_list:
-                    if DEBUG:
-                        try:
-                            print("status_code", data.get("status_code"), "data_len", len(data.get("data") or []))
-                        except Exception:
-                            pass
-                    items.extend(extract_aweme_items(data, kw))
-
-            page = context.new_page()
-            if STEALTH_AVAILABLE:
-                try:
-                    stealth_sync(page)
+                    context.add_cookies(cookies)
                 except Exception:
                     pass
-            page.on("response", handle_response)
-            page.goto(
-                f"https://www.douyin.com/search/{quote(kw)}",
-                wait_until="domcontentloaded",
-                timeout=60000,
-            )
-            page.wait_for_timeout(6000)
-            page.close()
-            if items:
-                print(f"关键词「{kw}」命中 {len(items)} 条")
-            if items:
-                all_items.extend(items)
-        context.close()
-        browser.close()
+            # 先访问首页，让站点种必要的 Cookie
+            home = context.new_page()
+            if STEALTH_AVAILABLE:
+                try:
+                    stealth_sync(home)
+                except Exception:
+                    pass
+            try:
+                home.goto("https://www.douyin.com", wait_until="domcontentloaded", timeout=60000)
+                home.wait_for_timeout(3000)
+            except Exception:
+                pass
+            home.close()
+
+            for kw in SEARCH_KEYWORDS:
+                items = []
+
+                def handle_response(resp):
+                    url = resp.url
+                    if "aweme/v1/web/general/search" not in url:
+                        return
+                    try:
+                        raw = resp.body()
+                    except Exception:
+                        return
+                    data_list = parse_search_jsons(raw)
+                    if not data_list:
+                        return
+                    for data in data_list:
+                        items.extend(extract_aweme_items(data, kw))
+
+                page = context.new_page()
+                if STEALTH_AVAILABLE:
+                    try:
+                        stealth_sync(page)
+                    except Exception:
+                        pass
+                page.on("response", handle_response)
+                page.goto(
+                    f"https://www.douyin.com/search/{quote(kw)}",
+                    wait_until="domcontentloaded",
+                    timeout=60000,
+                )
+                page.wait_for_timeout(6000)
+                page.close()
+                if items:
+                    print(f"关键词「{kw}」命中 {len(items)} 条")
+                if items:
+                    all_items.extend(items)
+            context.close()
+            browser.close()
+    except Exception as e:
+        LAST_PLAYWRIGHT_ERROR = f"Playwright error: {e}"
+        return []
     return all_items
 
 
@@ -735,10 +713,16 @@ def main():
     items = []
     if HAR_FIRST:
         items = fetch_from_har()
+        if items:
+            print(f"HAR 命中 {len(items)} 条")
     if not items and not SKIP_PLAYWRIGHT:
         items = fetch_douyin_by_playwright()
+        if not items and LAST_PLAYWRIGHT_ERROR:
+            print(LAST_PLAYWRIGHT_ERROR)
     if not items:
         items = fetch_from_har()
+        if items:
+            print(f"HAR 命中 {len(items)} 条")
     if not items and ALLOW_HOT_FALLBACK:
         items = fetch_douyin_hot()
     items = select_top(items)
